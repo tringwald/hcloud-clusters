@@ -14,40 +14,30 @@ terraform {
 
 resource "hcloud_server" "server" {
   name         = count.index < var.num_master_nodes ? "master-${count.index + 1}" : "node-${count.index + 1}"
-  server_type  = "cx21"
+  server_type  = var.instance_type
   image        = "ubuntu-20.04"
-  location     = "hel1"
+  location     = var.region
   ssh_keys     = [var.ssh_key_name]
-  #firewall_ids = [hcloud_firewall.basic_rules.id]
+  firewall_ids = [hcloud_firewall.basic_rules.id]
   count        = var.node_count
-  user_data = templatefile("./cloud-init-user-data.yaml", {
-    name       = "node-${count.index + 1}"
-    pubkey     = base64encode(file("~/.ssh/k8s/id_rsa_k8s.pub"))
-    privatekey = base64encode(file("~/.ssh/k8s/id_rsa_k8s"))
-    node_ip    = "10.10.1.${count.index + 1}"
-    domain_name = var.domain_name
+  user_data = templatefile("./cloud-init/${var.init_file}.yaml", {
+    name               = "node-${count.index + 1}"
+    pubkey             = base64encode(file(var.pubkey_path))
+    privatekey         = base64encode(file(var.privatekey_path))
+    private_node_ip    = cidrhost(local.private_subnet, count.index + 1)
+    domain_name        = var.domain_name
+    subdomain_internal = var.subdomain_internal
   })
 
 
   network {
     network_id = hcloud_network.network.id
-    ip         = "10.10.1.${count.index + 1}"
+    ip         = cidrhost(local.private_subnet, count.index + 1)
   }
 
   depends_on = [
     hcloud_network_subnet.network_subnet
   ]
-}
-
-
-data "template_cloudinit_config" "setup" {
-  gzip          = false
-  base64_encode = false
-
-  part {
-    content_type = "text/cloud-config"
-    content      = file("./cloud-init-user-data.yaml")
-  }
 }
 
 variable "num_master_nodes" {
@@ -60,4 +50,24 @@ variable "node_count" {
 
 variable "ssh_key_name" {
   type = string
+}
+
+variable "init_file" {
+  type = string
+}
+
+variable "pubkey_path" {
+
+}
+
+variable "privatekey_path" {
+
+}
+
+variable "instance_type" {
+
+}
+
+variable "region" {
+
 }

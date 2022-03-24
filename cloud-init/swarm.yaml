@@ -1,0 +1,46 @@
+#cloud-config
+runcmd:
+  # General installation
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt upgrade -y
+  # Docker setup
+  - DEBIAN_FRONTEND=noninteractive apt -y install ca-certificates curl gnupg lsb-release jq
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt install -y docker-ce docker-ce-cli containerd.io
+  # Fix for docker
+  - >
+    echo '{"exec-opts": ["native.cgroupdriver=systemd"]}' > /etc/docker/daemon.json
+  - systemctl daemon-reload; systemctl restart docker
+  # Setup user and keys
+  - yes | adduser user --home /home/user --disabled-password --quiet
+  - usermod -aG docker user
+  - usermod -aG sudo user
+  - mkdir -p /home/user/.ssh
+  - echo "${pubkey}" | base64 --decode >> /home/user/.ssh/authorized_keys
+  - echo "${pubkey}" | base64 --decode > /home/user/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /home/user/.ssh/id_rsa
+  # Add root keys
+  - echo "${pubkey}" | base64 --decode > /root/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /root/.ssh/id_rsa
+  # Fix permissions
+  - chown 700 /home/user/.ssh
+  - chown -R user:user /home/user/.ssh
+  - chmod -R 600 /home/user/.ssh/*
+  - chmod -R 600 /root/.ssh/*
+  - service ssh restart
+  # Master setup
+  - >
+    if grep -q "master-1" "/etc/hostname"; then
+      docker swarm init --advertise-addr ${private_node_ip}
+      docker swarm join-token worker | grep docker > /swarm-join.sh
+    fi
+  # Node setup
+  - >
+    if grep -q "node" "/etc/hostname"; then
+      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1${subdomain_internal}.${domain_name}:/swarm-join.sh /; do sleep 5; done;
+      bash /swarm-join.sh
+    fi
+output:
+  all: "| tee -a /var/log/cloud-init-setup.log"

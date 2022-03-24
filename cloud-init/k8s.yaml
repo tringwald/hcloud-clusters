@@ -1,0 +1,59 @@
+#cloud-config
+runcmd:
+  # General installation
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt upgrade -y
+  # Docker setup
+  - DEBIAN_FRONTEND=noninteractive apt -y install ca-certificates curl gnupg lsb-release jq
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt install -y docker-ce docker-ce-cli containerd.io
+  # Kubeadm install
+  - curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+  - echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt install -y kubelet kubeadm kubectl
+  # Fix for docker
+  - >
+    echo '{"exec-opts": ["native.cgroupdriver=systemd"]}' > /etc/docker/daemon.json
+  - systemctl daemon-reload; systemctl restart docker
+  # Setup user and keys
+  - yes | adduser user --home /home/user --disabled-password --quiet
+  - usermod -aG docker user
+  - usermod -aG sudo user
+  - mkdir -p /home/user/.kube /home/user/.ssh
+  - echo "${pubkey}" | base64 --decode >> /home/user/.ssh/authorized_keys
+  - echo "${pubkey}" | base64 --decode > /home/user/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /home/user/.ssh/id_rsa
+  # Add root keys
+  - echo "${pubkey}" | base64 --decode > /root/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /root/.ssh/id_rsa
+  # Fix permissions
+  - chown 700 /home/user/.kube /home/user/.ssh
+  - chown -R user:user /home/user/.kube/ /home/user/.ssh
+  - chmod -R 600 /home/user/.ssh/*
+  - chmod -R 600 /root/.ssh/*
+  - service ssh restart
+  # Kubemaster setup
+  - >
+    if grep -q "master-1" "/etc/hostname"; then
+      service kubelet stop
+      kubeadm init --control-plane-endpoint=master-1.${subdomain_internal}.${domain_name} --apiserver-advertise-address=${private_node_ip} --pod-network-cidr=10.10.1.0/24;
+      cp /etc/kubernetes/admin.conf /home/user/.kube/config; chown user:user /home/user/.kube/config;
+      KUBECONFIG=/home/user/.kube/config kubectl apply -f "https://cloud.weave.works/k8s/net?env.IPALLOC_RANGE=10.11.0.0/16&k8s-version=$(kubectl version | base64 | tr -d '\n')";
+      echo "KUBECONFIG=/home/user/.kube/config" >> /etc/environment;
+      kubeadm token list -o json | jq ".token" | tr -d '"' > /kube-token.txt;
+      openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' > /kube-hash.txt;
+    fi
+  # Node setup
+  - >
+    if grep -q "node" "/etc/hostname"; then
+      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${subdomain_internal}.${domain_name}:/kube-* /; do sleep 5; done;
+      kubeadm join master-1.${subdomain_internal}.${domain_name}:6443 --token "$(cat /kube-token.txt)" --discovery-token-ca-cert-hash sha256:"$(cat /kube-hash.txt)";
+    fi
+  # Untained master nodes
+  - >
+    if grep -q "master-1" "/etc/hostname"; then KUBECONFIG=/home/user/.kube/config kubectl taint nodes --all node-role.kubernetes.io/master-; fi
+output:
+  all: "| tee -a /var/log/cloud-init-setup.log"

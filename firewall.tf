@@ -19,13 +19,4 @@ resource "hcloud_firewall" "basic_rules" {
       "::/0"
     ]
   }
-
-  #rule {
-  #  direction = "in"
-  #  protocol  = "tcp"
-  #  port = "10-32000"
-  #  source_ips = [
-  #    hcloud_network_subnet.network-subnet.ip_range
-  #  ]
-  #}
 }
