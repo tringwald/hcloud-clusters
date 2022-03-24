@@ -5,3 +5,4 @@ terraform.*
 .envrc
 *.hcl
 *.tfvars
+!template.tfvars
