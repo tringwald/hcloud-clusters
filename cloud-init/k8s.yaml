@@ -39,10 +39,20 @@ runcmd:
   - >
     if grep -q "master-1" "/etc/hostname"; then
       service kubelet stop
-      kubeadm init --control-plane-endpoint=master-1.${subdomain_internal}.${domain_name} --apiserver-advertise-address=${private_node_ip} --pod-network-cidr=10.10.1.0/24;
+      kubeadm init --control-plane-endpoint=master-1.${subdomain_internal}.${domain_name} --apiserver-advertise-address=${private_node_ip} --pod-network-cidr=10.11.0.0/16;
       cp /etc/kubernetes/admin.conf /home/user/.kube/config; chown user:user /home/user/.kube/config;
-      KUBECONFIG=/home/user/.kube/config kubectl apply -f "https://cloud.weave.works/k8s/net?env.IPALLOC_RANGE=10.11.0.0/16&k8s-version=$(kubectl version | base64 | tr -d '\n')";
+
+      # Setup networking
+      curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
+      sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
+      sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
+      rm cilium-linux-amd64.tar.gz{,.sha256sum}
+      KUBECONFIG=/home/user/.kube/config cilium install
+      sleep 10
+
+      # Setup env and tokens
       echo "KUBECONFIG=/home/user/.kube/config" >> /etc/environment;
+      echo "export KUBECONFIG=/home/user/.kube/config" >> /root/.bashrc;
       kubeadm token list -o json | jq ".token" | tr -d '"' > /kube-token.txt;
       openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' > /kube-hash.txt;
     fi
