@@ -39,16 +39,15 @@ runcmd:
   - >
     if grep -q "master-1" "/etc/hostname"; then
       service kubelet stop
-      kubeadm init --control-plane-endpoint=master-1.${subdomain_internal}.${domain_name} --apiserver-advertise-address=${private_node_ip} --pod-network-cidr=10.11.0.0/16;
+      kubeadm init --control-plane-endpoint=master-1.${fqdn_internal_noname} --apiserver-advertise-address=${node_internal_ip} --pod-network-cidr=10.11.0.0/16;
       cp /etc/kubernetes/admin.conf /home/user/.kube/config; chown user:user /home/user/.kube/config;
 
       # Setup networking
       curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
       sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
       sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
-      rm cilium-linux-amd64.tar.gz{,.sha256sum}
       KUBECONFIG=/home/user/.kube/config cilium install
-      sleep 10
+      sleep 30
 
       # Setup env and tokens
       echo "KUBECONFIG=/home/user/.kube/config" >> /etc/environment;
@@ -59,8 +58,8 @@ runcmd:
   # Node setup
   - >
     if grep -q "node" "/etc/hostname"; then
-      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${subdomain_internal}.${domain_name}:/kube-* /; do sleep 5; done;
-      kubeadm join master-1.${subdomain_internal}.${domain_name}:6443 --token "$(cat /kube-token.txt)" --discovery-token-ca-cert-hash sha256:"$(cat /kube-hash.txt)";
+      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${fqdn_internal_noname}:/kube-* /; do sleep 5; done;
+      kubeadm join master-1.${fqdn_internal_noname}:6443 --token "$(cat /kube-token.txt)" --discovery-token-ca-cert-hash sha256:"$(cat /kube-hash.txt)";
     fi
   # Untained master nodes
   - >
