@@ -1,0 +1,58 @@
+#cloud-config
+runcmd:
+  # General installation
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt upgrade -y
+  # Docker setup
+  - DEBIAN_FRONTEND=noninteractive apt -y install ca-certificates curl gnupg lsb-release jq
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  - apt update -y
+  - DEBIAN_FRONTEND=noninteractive apt install -y docker-ce docker-ce-cli containerd.io
+  # Fix for docker
+  - |
+    echo '{"exec-opts": ["native.cgroupdriver=systemd"]}' > /etc/docker/daemon.json
+  - systemctl daemon-reload; systemctl restart docker
+  # Setup user and keys
+  - yes | adduser user --home /home/user --disabled-password --quiet
+  - usermod -aG docker user
+  - usermod -aG sudo user
+  - mkdir -p /home/user/.kube /home/user/.ssh
+  - echo "${pubkey}" | base64 --decode >> /home/user/.ssh/authorized_keys
+  - echo "${pubkey}" | base64 --decode > /home/user/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /home/user/.ssh/id_rsa
+  # Add root keys
+  - echo "${pubkey}" | base64 --decode > /root/.ssh/id_rsa.pub
+  - echo "${privatekey}" | base64 --decode > /root/.ssh/id_rsa
+  # Fix permissions
+  - chown 700 /home/user/.kube /home/user/.ssh
+  - chown -R user:user /home/user/.kube/ /home/user/.ssh
+  - chmod -R 600 /home/user/.ssh/*
+  - chmod -R 600 /root/.ssh/*
+  - service ssh restart
+  # Fix DNS
+  - |
+    echo "DNS=1.1.1.1" >> /etc/systemd/resolved.conf;
+    systemctl restart systemd-resolved.service;
+  - |
+    export K3S_NODE_NAME=$(HOSTNAME//_/-)
+    export K3S_EXTERNAL_IP=$(ip addr show dev eth0 | grep -i inet | head -n 1 | cut -d " " -f 6 | cut -d '/' -f 1)
+    export INSTALL_K3S_EXEC="--docker --write-kubeconfig ~/.kube/config --write-kubeconfig-mode 666 --tls-san $K3S_EXTERNAL_IP --kube-apiserver-arg service-node-port-range=1-65000 --kube-apiserver-arg advertise-address=$K3S_EXTERNAL_IP --kube-apiserver-arg external-hostname=$K3S_EXTERNAL_IP"
+  # Master setup
+  - |
+    if grep -q "master-1" "/etc/hostname"; then
+      curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_START=true sh -
+      k3s server --cluster-init &
+      # Wait for server to come up
+      while ! ls /var/lib/rancher/k3s/server/node-token; do sleep 5; done;
+      cat /var/lib/rancher/k3s/server/node-token > /k3s-token;
+    fi
+  # Node setup
+  - |
+    if grep -q "node" "/etc/hostname"; then
+      curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_START=true sh -;
+      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${fqdn_public_noname}:/k3s-token /; do sleep 5; done;
+      k3s agent --server https://master-1.${fqdn_public_noname}:6443 --token $(cat /k3s-token) &
+    fi
+output:
+  all: "| tee -a /var/log/cloud-init-setup.log"
