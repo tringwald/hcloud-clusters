@@ -18,20 +18,20 @@ resource "hcloud_server" "server" {
   image       = "ubuntu-20.04"
   location    = var.region
   ssh_keys    = [var.ssh_key_name]
-  #firewall_ids = [hcloud_firewall.basic_rules.id]
+  firewall_ids = [hcloud_firewall.basic_rules.id]
   count = var.node_count
   user_data = templatefile("./cloud-init/${var.init_file}.yaml", {
-    name               = "node-${count.index + 1}"
-    pubkey             = base64encode(file(var.pubkey_path))
-    privatekey         = base64encode(file(var.privatekey_path))
-    private_node_ip    = cidrhost(local.private_subnet, count.index + 1)
-    domain_name        = var.domain_name
-    fqdn_public        = join(".", [count.index < var.num_master_nodes ? "master-${count.index + 1}" : "node-${count.index + 1}", var.subdomain, var.domain_name])
-    fqdn_internal       = join(".", [count.index < var.num_master_nodes ? "master-${count.index + 1}" : "node-${count.index + 1}", var.subdomain_internal, var.domain_name])
-    fqdn_public_noname  = join(".", [var.subdomain, var.domain_name])
-    fqdn_internal_noname  = join(".", [var.subdomain_internal, var.domain_name])
-    subdomain_public   = var.subdomain
-    subdomain_internal = var.subdomain_internal
+    name                 = "node-${count.index + 1}"
+    pubkey               = base64encode(file(var.pubkey_path))
+    privatekey           = base64encode(file(var.privatekey_path))
+    node_internal_ip      = cidrhost(local.private_subnet, count.index + 1)
+    domain_name          = var.domain_name
+    fqdn_public          = join(".", [count.index < var.num_master_nodes ? "master-${count.index + 1}" : "node-${count.index + 1}", var.subdomain, var.domain_name])
+    fqdn_internal        = join(".", [count.index < var.num_master_nodes ? "master-${count.index + 1}" : "node-${count.index + 1}", var.subdomain_internal, var.domain_name])
+    fqdn_public_noname   = join(".", [var.subdomain, var.domain_name])
+    fqdn_internal_noname = join(".", [var.subdomain_internal, var.domain_name])
+    subdomain_public     = var.subdomain
+    subdomain_internal   = var.subdomain_internal
   })
 
 

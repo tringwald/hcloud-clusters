@@ -34,9 +34,10 @@ runcmd:
   - |
     echo "DNS=1.1.1.1" >> /etc/systemd/resolved.conf;
     systemctl restart systemd-resolved.service;
+  # Setup environment variables
   - |
     export K3S_NODE_NAME=$(HOSTNAME//_/-)
-    export K3S_EXTERNAL_IP=$(ip addr show dev eth0 | grep -i inet | head -n 1 | cut -d " " -f 6 | cut -d '/' -f 1)
+    export K3S_EXTERNAL_IP=${node_internal_ip}
     export INSTALL_K3S_EXEC="--docker --write-kubeconfig ~/.kube/config --write-kubeconfig-mode 666 --tls-san $K3S_EXTERNAL_IP --kube-apiserver-arg service-node-port-range=1-65000 --kube-apiserver-arg advertise-address=$K3S_EXTERNAL_IP --kube-apiserver-arg external-hostname=$K3S_EXTERNAL_IP"
   # Master setup
   - |
@@ -51,8 +52,8 @@ runcmd:
   - |
     if grep -q "node" "/etc/hostname"; then
       curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_START=true sh -;
-      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${fqdn_public_noname}:/k3s-token /; do sleep 5; done;
-      k3s agent --server https://master-1.${fqdn_public_noname}:6443 --token $(cat /k3s-token) &
+      while ! scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null user@master-1.${fqdn_internal_noname}:/k3s-token /; do sleep 5; done;
+      k3s agent --server https://master-1.${fqdn_internal_noname}:6443 --token $(cat /k3s-token) &
     fi
 output:
   all: "| tee -a /var/log/cloud-init-setup.log"

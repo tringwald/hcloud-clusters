@@ -9,11 +9,11 @@ num_master_nodes = 1
 node_count       = 5
 
 # SSH key name as provided in the Hetzner interface, used to connect to the nodes.
-ssh_key_name = "user@hostname"
+ssh_key_name = "user@cluster"
 
 # Local SSH key paths for node-to-node communication
-pubkey_path     = "~/.ssh/id_rsa_k8s.pub"
-privatekey_path = "~/.ssh/id_rsa_k8s"
+pubkey_path     = "~/.ssh/id_rsa.pub"
+privatekey_path = "~/.ssh/id_rsa"
 
 # These variables are assembled to:
 # external DNS (public IP): <node-name>.<subdomain>.<domain_name> and
